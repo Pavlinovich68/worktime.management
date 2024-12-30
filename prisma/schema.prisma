@@ -1,0 +1,274 @@
+generator client {
+   provider = "prisma-client-js"
+}
+
+datasource db {
+   provider = "postgresql"
+   url      = env("DATABASE_URL")
+}
+
+model Account {
+   id                String  @id @default(cuid())
+   userId            Int
+   type              String
+   provider          String
+   providerAccountId String
+   refresh_token     String?
+   access_token      String?
+   expires_at        Int?
+   token_type        String?
+   scope             String?
+   id_token          String?
+   session_state     String?
+   user              users   @relation(fields: [userId], references: [id], onDelete: Cascade)
+   @@unique([provider, providerAccountId])
+}
+
+model Session {
+   id           String   @id @default(cuid())
+   sessionToken String   @unique
+   userId       Int
+   expires      DateTime
+   user         users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+//NOTE - Подразделение
+model division {
+   id             Int         @id @default(autoincrement())
+   name           String?     @unique(map: "division_u_ind") @db.VarChar(200)
+   parent_id      Int?
+   parent         division?   @relation("divisionTodivision", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   childrens      division[]  @relation("divisionTodivision")
+   rate           rate[]
+   dept_calendar  dept_calendar[]
+   roadmaps       roadmap[]
+}
+//NOTE - Пользователи системы
+model users {
+   id             Int         @id @default(autoincrement())
+   password       String?     @db.VarChar(255)
+   employee_id    Int         @unique(map: "user_employee_u_ind")
+   roles          Json?       @db.Json
+   attachment_id  Int?
+   emailVerified  DateTime?
+   accounts       Account[]
+   sessions       Session[]
+   avatar         attachment? @relation(fields: [attachment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   employee       employee    @relation(fields: [employee_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   restoreGuid    String?     @db.VarChar(32)
+   restoreTime    DateTime?
+}
+//NOTE - Вложения
+model attachment {
+   id             Int            @id @default(autoincrement())
+   filename       String         @db.VarChar(100)
+   body           Bytes
+   date           DateTime       @db.Timestamp(6)
+   size           Int
+   type           String         @db.VarChar(100)
+   md5            String         @db.VarChar(32)
+   users          users[]
+   roadmap_items  roadmap_item[]
+}
+//NOTE - Проекты
+model project {
+   id                Int       @id @default(autoincrement())
+   code              String    @unique @db.VarChar(3)
+   name              String    @db.VarChar(250)
+   parent_id      Int?
+   parent         project?   @relation("projectToProject", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   childrens      project[]  @relation("projectToProject")   
+   roadmap_items     roadmap_item[]
+}
+//NOTE - Рабочий календарь
+model production_calendar {
+   id          Int @id @default(autoincrement())
+   year        Int @unique
+   exclusions  exclusion[]
+}
+//NOTE - Исключение для всех
+//SECTION
+//NOTE - exclusion_type
+// 0 - holiday
+// 1 - reduced
+// 2 - holiday transfer
+// 3 - worked transfer
+//!SECTION
+model exclusion {
+   id                      Int @id @default(autoincrement())
+   date                    DateTime @db.Timestamp(6)
+   exclusion_type          Int
+   production_calendar_id  Int
+   production_calendar     production_calendar @relation(fields: [production_calendar_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   @@unique([date, production_calendar_id])
+}
+//NOTE - Профиль разработчика
+//SECTION
+//NOTE - stack
+// 0 - back
+// 1 - front
+// 2 - full_stack
+// 3 - unknown
+//!SECTION
+model employee {
+   id             Int         @id @default(autoincrement())
+   name           String      @db.VarChar(75)
+   email          String      @unique(map: "employee_email_u_ind") @db.VarChar(50)
+   contacts       String?     @db.VarChar(50)
+   begin_date     DateTime    @default(now()) @db.Timestamp(6)
+   end_date       DateTime?   @db.Timestamp(6)
+   staff          staff[]
+   users          users[]
+   roadmap_items  roadmap_fact_item[]
+}
+//NOTE - График отпусков
+model vacation {
+   id          Int      @id @default(autoincrement())
+   year        Int
+   start_date  DateTime @db.Timestamp(6)
+   end_date    DateTime @db.Timestamp(6)
+   staff_id    Int
+   staff       staff?   @relation(fields: [staff_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+//NOTE - Дорожная карта
+model roadmap {
+   id             Int      @id @default(autoincrement())
+   year           Int
+   division_id    Int         
+   division       division    @relation(fields: [division_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   roadmap_items  roadmap_item[]
+   @@unique([year,  division_id])
+}
+//NOTE - Элемент дорожной карты
+model roadmap_item {
+   id             Int            @id @default(autoincrement())
+   comment        String?        @db.VarChar(250)
+   roadmap_id     Int
+   roadmap        roadmap        @relation(fields: [roadmap_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   project_id     Int
+   project        project        @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   hours          Int
+   is_closed      Boolean        @default(false)
+   begin_date     DateTime      @db.Timestamp(6)
+   documents      attachment[]
+   control_points control_point[]
+   fact_items     roadmap_fact_item[]
+   @@unique([roadmap_id,  project_id])
+}
+//NOTE - Фактически затраченное время
+model roadmap_fact_item {
+   id             Int         @id @default(autoincrement())
+   date           DateTime    @db.Timestamp(6)
+   hours          Int
+   employee_id    Int
+   employee       employee    @relation(fields: [employee_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   roadmap_item_id   Int
+   roadmap_item   roadmap_item @relation(fields: [roadmap_item_id], references: [id])
+}
+//NOTE - Контрольная точка
+// 1 - Предоставление требований
+// 2 - Подготовка ТЗ
+// 3 - Согласование ТЗ
+// 4 - Предварительные испытания
+// 5 - Опытная эксплуатация
+// 6 - Приемочные испытания
+// 7 - Ввод в эксплуатацию
+// 8 - Прочее
+model control_point {
+   id                Int            @id @default(autoincrement())
+   date              DateTime       @db.Timestamp(6)
+   name              String         @db.VarChar(250)
+   type              Int            @default(8)
+   roadmap_item_id   Int
+   roadmap_item      roadmap_item   @relation(fields: [roadmap_item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+//NOTE - Дни пропуска
+//SECTION
+//NOTE - type
+// 0 - sick_leave    Больничный
+// 1 - rest          Отгул
+// 2 - without_pay   Без содержания
+// 3 - absenteeism   Прогул
+//!SECTION
+model days_off {
+   id          Int   @id @default(autoincrement())
+   start_date  DateTime @db.Timestamp(6)
+   end_date    DateTime @db.Timestamp(6)
+   type        Int
+   comment     String   @db.VarChar(150)
+}
+//NOTE Должности
+model post {
+   id                Int      @id @default(autoincrement())
+   name              String   @db.VarChar(250)
+   hierarchy_level   Int      @default(0)
+   rate              rate[]
+}
+//NOTE - Ставки
+model rate {
+   id             Int         @id @default(autoincrement())
+   no             Int         
+   post_id        Int
+   is_work_time   Boolean     @default(true)
+   post           post        @relation(fields: [post_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   division_id    Int         
+   division       division    @relation(fields: [division_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   staff          staff[]
+   calendar_rows  dept_calendar_row[]
+   @@unique([no,  division_id])
+}
+//NOTE - Штатные идиницы
+model staff {
+   id                Int         @id @default(autoincrement())
+   rate_id           Int
+   rate              rate        @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   employee_id       Int
+   employee          employee    @relation(fields: [employee_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   begin_date        DateTime    @db.Timestamp(6)
+   end_date          DateTime?   @db.Timestamp(6)   
+   vacations         vacation[]
+   @@unique([id])
+}
+//NOTE - Рабочий календарь подразделения
+model dept_calendar {
+   id          Int                  @id @default(autoincrement())
+   year        Int
+   division_id Int   
+   division    division             @relation(fields: [division_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   rows        dept_calendar_row[]
+   @@unique([year, division_id])
+}
+//NOTE - Привязка ставки к календарю
+model dept_calendar_row {
+   id          Int            @id @default(autoincrement())
+   no          Int
+   rate_id     Int
+   rate        rate           @relation(fields: [rate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   cells       dept_calendar_cell[]
+   calendar_id Int
+   calendar    dept_calendar  @relation(fields: [calendar_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   @@unique([rate_id, calendar_id])
+}
+//NOTE - Типы дня. Частично совпадает с типами исключений
+//SECTION
+//NOTE - exclusion_type
+// 0 - holiday
+// 1 - reduced
+// 2 - holiday transfer
+// 3 - worked transfer
+// 4 - worked
+// 5 - vacation
+// 6 - hospital
+// 7 - without pay
+// 8 - absense from work
+// 9 - vacancy
+// 10 - work on weekends
+model dept_calendar_cell {
+   id       Int               @id @default(autoincrement())
+   month    Int
+   day      Int
+   hours    Int
+   type     Int
+   row_id   Int
+   row      dept_calendar_row @relation(fields: [row_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+   @@unique([month, day, row_id])
+}
